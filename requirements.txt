@@ -1,3 +1,6 @@
 streamlit
 yfinance
 groq
+openai
+pandas
+matplotlib
