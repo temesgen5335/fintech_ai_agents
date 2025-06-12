@@ -4,3 +4,8 @@ groq
 openai
 pandas
 matplotlib
+fastapi[standard]
+rapidfuzz
+dotenv
+sentence-transformers
+faiss-cpu
