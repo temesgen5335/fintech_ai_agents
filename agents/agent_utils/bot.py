@@ -25,16 +25,25 @@ app = FastAPI()
 load_dotenv()
 
 # Load data from JSON files
+base_dir = os.path.dirname(os.path.abspath(__file__))  # directory where script lives
+
 try:
-    with open("intents.json", "r") as f:
+    with open(os.path.join(base_dir, "intents.json"), "r") as f:
         intents = json.load(f)
-    with open("responses.json", "r") as f:
+    with open(os.path.join(base_dir, "response.json"), "r") as f:
         responses = json.load(f)
-    with open("knowledge_base.json", "r") as f:
+    with open(os.path.join(base_dir, "knowledge_base.json"), "r") as f:
         knowledge_base = json.load(f)
+except FileNotFoundError as e:
+    logging.error(f"Missing JSON file: {e.filename}")
+    raise ValueError(f"Missing required file: {e.filename}")
+except json.JSONDecodeError as e:
+    logging.error(f"Malformed JSON in file: {e.msg}")
+    raise ValueError(f"Invalid JSON format in one of the files.")
 except Exception as e:
-    logging.error(f"Error loading JSON files: {e}")
-    raise ValueError("Failed to load required JSON files.")
+    logging.error(f"Unexpected error: {e}")
+    raise
+
 
 # Define request model
 class ChatRequest(BaseModel):
@@ -43,7 +52,11 @@ class ChatRequest(BaseModel):
 
 # Load the embedding model
 try:
-    embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', use_auth_token=os.getenv("HF_API_TOKEN"))
+    # embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', use_auth_token=os.getenv("HF_API_TOKEN"))
+    model_path = os.path.abspath("../hf_models/all-MiniLM-L6-v2")
+    print("Model path:", model_path)
+    print("Exists:", os.path.exists(model_path))
+    embedding_model = SentenceTransformer(model_path)
 except Exception as e:
     logging.error(f"Error loading embedding model: {e}")
     raise ValueError("Failed to load the embedding model.")
@@ -87,9 +100,10 @@ def classify_intent(user_input):
     for intent, keywords in intents.items():
         for keyword in keywords:
             score = fuzz.token_sort_ratio(user_input, keyword)
-            logging.info(f"Intent: {intent}, Keyword: {keyword}, Score: {score}")
             if score > highest_score:
                 highest_score, best_match = score, intent
+                logging.info(f"Intent: {intent}, Keyword: {keyword}, Score: {score}")
+
     return best_match if highest_score > 70 else "fallback"
 
 # Retrieve from knowledge base
