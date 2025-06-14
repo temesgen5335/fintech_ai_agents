@@ -9,7 +9,7 @@ import json
 import traceback
 
 # === Set your Groq API key ===
-groq_api_key = "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"
+groq_api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=groq_api_key)
 
 mock_transactions = [

@@ -1,10 +1,11 @@
 import streamlit as st
 import yfinance as yf
 import math
+import os
 from groq import Groq
 
 # === Set your Groq API key ===
-groq_api_key = "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"
+groq_api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=groq_api_key)
 
 # === Financial Logic Functions ===
