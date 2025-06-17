@@ -9,3 +9,4 @@ rapidfuzz
 dotenv
 sentence-transformers
 faiss-cpu
+openpyxl
