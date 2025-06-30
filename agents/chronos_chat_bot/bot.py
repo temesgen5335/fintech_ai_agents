@@ -15,14 +15,29 @@ import logging
 import time
 import random  
 import re
-import string
+import traceback
+from fastapi.middleware.cors import CORSMiddleware
+import ollama
+from ollama import Client
+# Initialize FastAPI app
+app = FastAPI()
+load_dotenv()
+
+origins = [
+    "*",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins, 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Initialize FastAPI app
-app = FastAPI()
-load_dotenv()
 
 # Load data from JSON files
 base_dir = os.path.dirname(os.path.abspath(__file__))  # directory where script lives
@@ -41,6 +56,7 @@ except json.JSONDecodeError as e:
     logging.error(f"Malformed JSON in file: {e.msg}")
     raise ValueError(f"Invalid JSON format in one of the files.")
 except Exception as e:
+    traceback.print_exc()
     logging.error(f"Unexpected error: {e}")
     raise
 
@@ -53,11 +69,13 @@ class ChatRequest(BaseModel):
 # Load the embedding model
 try:
     # embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', use_auth_token=os.getenv("HF_API_TOKEN"))
-    model_path = os.path.abspath("../hf_models/all-MiniLM-L6-v2")
+    model_path = os.path.abspath("../../../hf_models/all-MiniLM-L6-v2")
     print("Model path:", model_path)
     print("Exists:", os.path.exists(model_path))
     embedding_model = SentenceTransformer(model_path)
+
 except Exception as e:
+    traceback.print_exc()
     logging.error(f"Error loading embedding model: {e}")
     raise ValueError("Failed to load the embedding model.")
 
@@ -71,8 +89,11 @@ def initialize_faiss_index():
         embeddings = np.array(embeddings).astype('float32')
         index = faiss.IndexFlatL2(embeddings.shape[1])
         index.add(embeddings)
+
         return index, questions
+
     except Exception as e:
+        traceback.print_exc()
         logging.error(f"Error initializing FAISS index: {e}")
         raise
 
@@ -116,31 +137,73 @@ def retrieve_from_knowledge_base(query):
     return None
 
 # Generate response via API
-def generate_response_api(input_text, max_length=100):
-  
-    HF_API_TOKEN, MODEL_ID = os.getenv("HF_API_TOKEN"), os.getenv("MODEL_ENDPOINT")
+def generate_response_api(user_input, max_length=100):
+    # HF_API_TOKEN, MODEL_ID = os.getenv("HF_API_TOKEN"), os.getenv("MODEL_ENDPOINT")
     
-    if not HF_API_TOKEN or not MODEL_ID:
-        logging.error("Missing required environment variables: HF_API_TOKEN or MODEL_ENDPOINT")
-        return "I encountered an error while generating a response."
-    
-    headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
-    payload = {"inputs": input_text, "parameters": {"max_length": max_length, "num_return_sequences": 1}}
-    
+    # if not HF_API_TOKEN or not MODEL_ID:
+    #     logging.error("Missing required environment variables: HF_API_TOKEN or MODEL_ENDPOINT")
+    #     traceback.print_exc()
+    #     return "I encountered an error while generating a response."
+
+    # Prompt Engineering for Financial Assistant
+    prompt = f"""
+    You are Chronos, a helpful and intelligent financial assistant. Only respond to questions related to:
+    - personal finance
+    - budgeting
+    - saving and investment advice
+    - banking services
+    - financial literacy and tools
+
+    If the user asks something outside of these topics, respond with:
+    "I'm here to assist with financial matters. Can I help you with something related to money, budgeting, or banking?"
+
+    User query: {user_input}
+
+    Your helpful and accurate response:
+    """
+
+    # headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+    # payload = {
+    #     "inputs": prompt,
+    #     "parameters": {
+    #         "max_length": max_length,
+    #         "num_return_sequences": 1
+    #     }
+    # }
+
     try:
-        response = requests.post(f"https://api-inference.huggingface.co/models/{MODEL_ID}", headers=headers, json=payload)
-        result = response.json()
+        # response = requests.post(
+        #     f"https://api-inference.huggingface.co/models/{MODEL_ID}",
+        #     headers=headers,
+        #     json=payload
+        # )
+        # result = response.json()
+
+        # if "error" in result:
+        #     logging.error(f"Hugging Face API error: {result['error']}")
+        #     return "An error occurred while generating a response."
+
+        # generated_text = result[0].get("generated_text", "").strip()
+        # extracted_response = re.sub(r"---|###|####", "", generated_text).strip()
+        # return extracted_response if extracted_response else "I couldn't generate a suitable response."
         
-        if "error" in result:
-            logging.error(f"Hugging Face API error: {result['error']}")
-            return "An error occurred while generating a response."
+        ## using local LLM models
+        client = ollama.Client()
+        response = client.generate(model='deepseek-r1', prompt=prompt)
+
+        cleaned_text = re.sub(r'<think>.*?</think>', '', response['response'].strip(), flags=re.DOTALL).strip()
+        # Remove surrounding double quotes if present
+        if cleaned_text.startswith('"') and cleaned_text.endswith('"'):
+            cleaned_text = cleaned_text[1:-1].strip()
         
-        generated_text = result[0].get("generated_text", "").strip()
-        extracted_response = re.sub(r"---|###|####", "", generated_text).strip()
-        return extracted_response if extracted_response else "I couldn't generate a suitable response."
+        print("Response from local model!!")
+        return cleaned_text
+            
     except Exception as e:
+        traceback.print_exc()
         logging.error(f"Hugging Face API error: {e}")
         return "An error occurred while generating a response."
+
 
 # AI agent logic
 def ai_agent(user_id, user_input):
@@ -228,6 +291,7 @@ def ai_agent(user_id, user_input):
         return generate_response_api(user_input)
 
     except Exception as e:
+        traceback.print_exc()
         logging.error(f"Error processing input: {e}")
         return "An error occurred. Please try again later."
     
@@ -247,6 +311,7 @@ async def chat(request: ChatRequest):
         response = ai_agent(user_id, user_input)
         return {"response": response}
     except Exception as e:
+        traceback.print_exc()
         logging.error(f"Unexpected error: {e}")
         return {"response": "Sorry, something went wrong. Please try again later."}
 
